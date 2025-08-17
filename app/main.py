@@ -4,7 +4,7 @@ from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 from typing import Optional
 
-from .utils import ensure_rgba, auto_font, draw_centered_multiline
+from .utils import ensure_rgba, auto_font
 
 app = FastAPI(title="Watermark API", version="1.0.0")
 
@@ -49,18 +49,29 @@ async def watermark(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid image upload")
 
-    # Convert and create overlay
     img = ensure_rgba(base)
     w, h = img.size
 
-    # White overlay with given opacity
-    overlay = Image.new("RGBA", (w, h), (255, 255, 255, max(0, min(255, opacity))))
-    composited = Image.alpha_composite(img, overlay)
-
-    # Draw centered text
-    draw = ImageDraw.Draw(composited)
+    # Draw centered text with background
+    draw = ImageDraw.Draw(img)
     font = auto_font(font_path=font_path, requested_px=font_size, img_w=w, img_h=h)
-    draw_centered_multiline(draw, text=text or "", font=font, img_w=w, img_h=h, fill=text_color)
+
+    # text size
+    text_bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = text_bbox[2] - text_bbox[0]
+    text_h = text_bbox[3] - text_bbox[1]
+
+    # center position
+    x = (w - text_w) // 2
+    y = (h - text_h) // 2
+
+    # bg
+    padding = 20
+    rect = Image.new("RGBA", (text_w + 2 * padding, text_h + 2 * padding), (255, 255, 255, opacity))
+    img.alpha_composite(rect, dest=(x - padding, y - padding))
+
+    # text
+    draw.text((x, y), text, font=font, fill=text_color)
 
     # Encode result
     fmt = output.upper()
@@ -68,11 +79,9 @@ async def watermark(
         fmt = "JPEG"
 
     out = BytesIO()
-
-    # Convert back to RGB for formats without alpha
-    save_img = composited
+    save_img = img
     if fmt in ("JPEG", "JPG"):
-        save_img = composited.convert("RGB")
+        save_img = img.convert("RGB")
         save_img.save(out, fmt, quality=95, optimize=True)
     elif fmt == "PNG":
         save_img.save(out, fmt, optimize=True)
@@ -89,3 +98,4 @@ async def watermark(
     }[fmt]
 
     return Response(content=out.getvalue(), media_type=media, headers=headers)
+
