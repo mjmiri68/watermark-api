@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  watermark-api:
+    build: .
+    container_name: watermark-api
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    volumes:
+      - ./app/assets/fonts:/app/app/assets/fonts:ro
+    environment:
+      - TZ=UTC
